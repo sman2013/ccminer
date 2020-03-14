@@ -311,6 +311,7 @@ Options:\n\
 			x16s        X16S\n\
 			x17         X17\n\
 			wildkeccak  Boolberry\n\
+			yee         Yee\n\
 			zr5         ZR5 (ZiftrCoin)\n\
   -d, --devices         Comma separated list of CUDA devices to use.\n\
                         Device IDs start counting from 0! Alternatively takes\n\
@@ -665,6 +666,21 @@ bool jobj_binary(const json_t *obj, const char *key, void *buf, size_t buflen)
 		applog(LOG_ERR, "JSON key '%s' is not a string", key);
 		return false;
 	}
+	char dst[65] = { 0 };
+	if (opt_algo == ALGO_YEE) {
+		hexstr += 2;
+		size_t len = strlen(hexstr);
+		if (len < 64)
+		{
+			for (int i = 0; i < 64 - len; i++)
+			{
+				dst[i] = '0';
+			}
+			char* tmp = &dst[64 - len];
+			strncpy(tmp, hexstr, len);
+			hexstr = dst;
+		}
+	}
 	if (!hex2bin((uchar*)buf, hexstr, buflen))
 		return false;
 
@@ -706,6 +722,35 @@ static bool work_decode(const json_t *val, struct work *work)
 	int data_size, target_size = sizeof(work->target);
 	int adata_sz, atarget_sz = ARRAY_SIZE(work->target);
 	int i;
+
+	if (opt_algo == ALGO_YEE) {
+		if (!jobj_binary(val, "merkle_root", work->merkle_root, sizeof(work->merkle_root)))
+		{
+			applog(LOG_ERR, "merkle_root field format error");
+			return false;
+		}
+		json_t *obj = json_object_get(val, "extra_data");
+		if (!obj) {
+			applog(LOG_ERR, "extra_data field format error");
+			return false;
+		}
+		if (json_is_array(obj))
+		{
+			size_t idx = 0;
+			json_t *p;
+			json_array_foreach(obj, idx, p) {
+				json_int_t v = json_integer_value(p);
+				work->extra_data[idx] = (uint8_t)v;
+			}
+			work->extra_data[idx] = 0;
+		}
+		if (!jobj_binary(val, "target", work->target, target_size)){
+			applog(LOG_ERR, "target field format error");
+			return false;
+		}
+		work->targetdiff = target_to_diff(work->target);
+		return true;
+	}
 
 	switch (opt_algo) {
 	case ALGO_DECRED:
@@ -1260,7 +1305,7 @@ static bool get_mininginfo(CURL *curl, struct work *work)
 }
 
 static const char *json_rpc_getwork =
-"{\"jsonrpc\": \"2.0\", \"method\":\"getwork\",\"params\":[],\"id\":0}\r\n";
+"{\"jsonrpc\": \"2.0\", \"method\":\"get_work\",\"params\":[],\"id\":0}\r\n";
 
 static bool get_upstream_work(CURL *curl, struct work *work)
 {
@@ -3974,7 +4019,7 @@ int main(int argc, char *argv[])
 	// get opt_quiet early
 	parse_single_opt('q', argc, argv);
 
-	printf("*** ccminer " PACKAGE_VERSION " for nVidia GPUs by tpruvot@github ***\n");
+	printf("*** ccminer " PACKAGE_VERSION " for nVidia GPUs by sman2013@github ***\n");
 	if (!opt_quiet) {
 		const char* arch = is_x64() ? "64-bits" : "32-bits";
 #ifdef _MSC_VER

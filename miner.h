@@ -731,6 +731,10 @@ struct work {
 	uint32_t target[8];
 	uint32_t maxvote;
 
+	uint8_t merkle_root[32];
+	uint8_t extra_data[1024];
+
+
 	char job_id[128];
 	size_t xnonce2_len;
 	uchar xnonce2[32];

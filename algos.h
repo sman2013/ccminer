@@ -80,6 +80,7 @@ enum sha_algos {
 	ALGO_MONERO,
 	ALGO_GRAFT,
 	ALGO_STELLITE,
+	ALGO_YEE,
 	ALGO_AUTO,
 	ALGO_COUNT
 };
@@ -162,6 +163,7 @@ static const char *algo_names[] = {
 	"monero",
 	"graft",
 	"stellite",
+	"yee",
 	"auto", /* reserved for multi algo */
 	""
 };
