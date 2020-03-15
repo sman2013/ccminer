@@ -668,14 +668,11 @@ bool jobj_binary(const json_t *obj, const char *key, void *buf, size_t buflen)
 	}
 	char dst[65] = { 0 };
 	if (opt_algo == ALGO_YEE) {
-		hexstr += 2;
+		hexstr += 2;	// remove 0x
 		size_t len = strlen(hexstr);
 		if (len < 64)
 		{
-			for (int i = 0; i < 64 - len; i++)
-			{
-				dst[i] = '0';
-			}
+			memset(dst, '0', 64 - len);
 			char* tmp = &dst[64 - len];
 			strncpy(tmp, hexstr, len);
 			hexstr = dst;
@@ -683,7 +680,17 @@ bool jobj_binary(const json_t *obj, const char *key, void *buf, size_t buflen)
 	}
 	if (!hex2bin((uchar*)buf, hexstr, buflen))
 		return false;
-
+	// revert bytes
+	/*if (opt_algo == ALGO_YEE && strcmp(key, "target") == 0) {
+		uint8_t *p = (uint8_t *)buf;
+		uint8_t len = 32;
+		for (int i = 0; i < len / 2; i++)
+		{
+			uint8_t tmp = p[i];
+			p[i] = p[len - i];
+			p[len - i] = tmp;
+		}
+	}*/
 	return true;
 }
 
@@ -749,6 +756,7 @@ static bool work_decode(const json_t *val, struct work *work)
 			return false;
 		}
 		work->targetdiff = target_to_diff(work->target);
+		cbin2hex(work->job_id, (const char*)&work->merkle_root, sizeof(work->merkle_root));
 		return true;
 	}
 
@@ -1099,12 +1107,12 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 		if (opt_vote) { // ALGO_HEAVY
 			nvotestr = bin2hex((const uchar*)(&nvote), 2);
-			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
+			sprintf(s, "{\"jsonrpc\": \"2.0\", \"method\": \"mining.submit\", \"params\": ["
 					"\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":%u}",
 					pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, nvotestr, stratum.job.shares_count + 10);
 			free(nvotestr);
 		} else {
-			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
+			sprintf(s, "{\"jsonrpc\": \"2.0\", \"method\": \"mining.submit\", \"params\": ["
 					"\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":%u}",
 					pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, stratum.job.shares_count + 10);
 		}
@@ -1155,7 +1163,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 		/* build JSON-RPC request */
 		sprintf(s,
-			"{\"method\": \"getwork\", \"params\": [\"%s\"], \"id\":10}\r\n",
+			"{\"jsonrpc\": \"2.0\", \"method\": \"getwork\", \"params\": [\"%s\"], \"id\":10}\r\n",
 			str);
 
 		/* issue JSON-RPC request */
@@ -1223,7 +1231,7 @@ static bool gbt_work_decode(const json_t *val, struct work *work)
 
 #define GBT_CAPABILITIES "[\"coinbasetxn\", \"coinbasevalue\", \"longpoll\", \"workid\"]"
 static const char *gbt_req =
-	"{\"method\": \"getblocktemplate\", \"params\": [{"
+	"{\"jsonrpc\": \"2.0\", \"method\": \"getblocktemplate\", \"params\": [{"
 	//	"\"capabilities\": " GBT_CAPABILITIES ""
 	"}], \"id\":9}\r\n";
 
@@ -1254,7 +1262,7 @@ static bool get_blocktemplate(CURL *curl, struct work *work)
 
 // good alternative for wallet mining, difficulty and net hashrate
 static const char *info_req =
-	"{\"method\": \"getmininginfo\", \"params\": [], \"id\":8}\r\n";
+	"{\"jsonrpc\": \"2.0\", \"method\": \"getmininginfo\", \"params\": [], \"id\":8}\r\n";
 
 static bool get_mininginfo(CURL *curl, struct work *work)
 {
