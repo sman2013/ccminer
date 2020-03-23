@@ -214,6 +214,16 @@ static inline void le32enc(void *pp, uint32_t x)
 }
 #endif
 
+static void swap_u256_bytes(void* input) {
+	uint8_t* pp = (uint8_t*)input;
+	for (int i = 0; i < 16;i++)
+	{
+		uint8_t tmp = *(pp + i);
+		*(pp + i) = *(pp + 32 - i - 1);
+		*(pp + 32 - i - 1) = tmp;
+	}
+}
+
 #if !HAVE_DECL_BE16DEC
 static inline uint16_t be16dec(const void *pp)
 {
@@ -337,6 +347,7 @@ extern int scanhash_x16r(int thr_id, struct work* work, uint32_t max_nonce, unsi
 extern int scanhash_x16s(int thr_id, struct work* work, uint32_t max_nonce, unsigned long *hashes_done);
 extern int scanhash_x17(int thr_id, struct work* work, uint32_t max_nonce, unsigned long *hashes_done);
 extern int scanhash_zr5(int thr_id, struct work *work, uint32_t max_nonce, unsigned long *hashes_done);
+extern int scanhash_yee(int thr_id, struct work *wk, uint32_t max_nonce, unsigned long *hashes_done);
 
 extern int scanhash_scrypt(int thr_id, struct work *work, uint32_t max_nonce, unsigned long *hashes_done,
 	unsigned char *scratchbuf, struct timeval *tv_start, struct timeval *tv_end);
@@ -732,7 +743,8 @@ struct work {
 	uint32_t maxvote;
 
 	uint8_t merkle_root[32];
-	uint8_t extra_data[1024];
+	uint8_t extra_data[256];
+	uint8_t extra_len;
 
 
 	char job_id[128];

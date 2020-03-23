@@ -791,10 +791,12 @@ bool fulltest(const uint32_t *hash, const uint32_t *target)
 	
 	for (i = 7; i >= 0; i--) {
 		if (hash[i] > target[i]) {
+			applog(LOG_DEBUG, "hash[%d]:%08x > target:%08x", hash[i], target[i]);
 			rc = false;
 			break;
 		}
 		if (hash[i] < target[i]) {
+			applog(LOG_DEBUG, "hash[%d]:%08x < target:%08x", hash[i], target[i]);
 			rc = true;
 			break;
 		}

@@ -2257,7 +2257,7 @@ void *monitor_thread(void *userdata)
 			}
 
 			if (opt_hwmonitor && (time(NULL) - cgpu->monitor.tm_displayed) > 60) {
-				gpulog(LOG_INFO, thr_id, "%u MHz %s%uC FAN %u%%",
+				gpulog(LOG_INFO, thr_id, "CLOCK: %u MHz, WATE: %s, TEM: %uC, FAN: %u%%",
 					cgpu->monitor.gpu_clock/*, cgpu->monitor.gpu_memclock*/,
 					khw, cgpu->monitor.gpu_temp, cgpu->monitor.gpu_fan
 				);

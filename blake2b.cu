@@ -44,8 +44,9 @@ extern "C" void blake2b_hash(void *output, const void *input)
 {
 	uint8_t _ALIGN(A) hash[32];
 	blake2b_ctx ctx;
-
+	// size_t len = strlen((const char*)input);
 	blake2b_init(&ctx, 32, NULL, 0);
+	//blake2b_update(&ctx, input, len);
 	blake2b_update(&ctx, input, 80);
 	blake2b_final(&ctx, hash);
 
@@ -153,9 +154,10 @@ uint32_t blake2b_hash_cuda(const int thr_id, const uint32_t threads, const uint3
 }
 
 __host__
-void blake2b_setBlock(uint32_t *data)
+void blake2b_setBlock(void *data)
 {
-	CUDA_SAFE_CALL(cudaMemcpyToSymbol(d_data, data, 80, 0, cudaMemcpyHostToDevice));
+	size_t len = strlen((const char*)data);
+	CUDA_SAFE_CALL(cudaMemcpyToSymbol(d_data, data, len, 0, cudaMemcpyHostToDevice));
 }
 
 static bool init[MAX_GPUS] = { 0 };
@@ -270,4 +272,127 @@ extern "C" void free_blake2b(int thr_id)
 	init[thr_id] = false;
 
 	cudaDeviceSynchronize();
+}
+
+extern "C" int scanhash_yee_bak(int thr_id, struct work *work, uint32_t max_nonce, unsigned long *hashes_done) {
+	uint32_t _ALIGN(A) endiandata[20];
+	uint32_t *pdata = work->data;
+	uint32_t *ptarget = work->target;
+
+	const uint32_t first_nonce = pdata[19];
+
+	int dev_id = device_map[thr_id];
+	int intensity = (device_sm[dev_id] >= 500 && !is_windows()) ? 28 : 25;
+	if (device_sm[dev_id] >= 520 && is_windows()) intensity = 26;
+	if (device_sm[dev_id] < 350) intensity = 22;
+
+	uint32_t throughput = cuda_default_throughput(thr_id, 1U << intensity);
+	if (init[thr_id]) throughput = min(throughput, max_nonce - first_nonce);
+
+	if (!init[thr_id])
+	{
+		cudaSetDevice(dev_id);
+		if (opt_cudaschedule == -1 && gpu_threads == 1) {
+			cudaDeviceReset();
+			// reduce cpu usage (linux)
+			cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
+			CUDA_LOG_ERROR();
+		}
+		gpulog(LOG_INFO, thr_id, "Intensity set to %g, %u cuda threads", throughput2intensity(throughput), throughput);
+
+		CUDA_CALL_OR_RET_X(cudaMalloc(&d_resNonces[thr_id], NBN * sizeof(uint32_t)), -1);
+		init[thr_id] = true;
+	}
+
+	for (int i = 0; i < 20; i++)
+		be32enc(&endiandata[i], pdata[i]);
+
+
+	const uint2 target = make_uint2(ptarget[6], ptarget[7]);
+	gpulog(LOG_INFO,thr_id, "sman target6-7: %u-%u", ptarget[6], ptarget[7]);
+	blake2b_setBlock(endiandata);
+
+	do {
+		work->nonces[0] = blake2b_hash_cuda(thr_id, throughput, pdata[19], target, work->nonces[1]);
+
+		*hashes_done = pdata[19] - first_nonce + throughput;
+
+		if (work->nonces[0] != UINT32_MAX)
+		{
+			const uint32_t Htarg = ptarget[7];
+			uint32_t _ALIGN(A) vhash[8];
+			work->valid_nonces = 0;
+			endiandata[19] = work->nonces[0];
+			blake2b_hash(vhash, endiandata);
+
+
+			char* data_hex = bin2hex((uchar*)endiandata, 80);
+			char* pdata_hex = bin2hex((uchar*)pdata, 80);
+			applog(LOG_DEBUG, "sman endiandata: %s\n pdata: %s", data_hex, pdata_hex);
+
+			uint32_t hash_be[8], target_be[8];
+			char *hash_str, *target_str;
+
+			for (int i = 0; i < 8; i++) {
+				be32enc(hash_be + i, vhash[7 - i]);
+				be32enc(target_be + i, ptarget[7 - i]);
+			}
+			hash_str = bin2hex((uchar *)hash_be, 32);
+			target_str = bin2hex((uchar *)target_be, 32);
+			applog(LOG_INFO, "[fulltest before] hash:%s, target:%s", hash_str, target_str);
+
+
+			if (vhash[7] <= Htarg && fulltest(vhash, ptarget)) {
+				work_set_target_ratio(work, vhash);
+				work->valid_nonces++;
+				pdata[19] = work->nonces[0] + 1;
+			}
+			else {
+				gpu_increment_reject(thr_id);
+			}
+
+			if (work->nonces[1] != UINT32_MAX) {
+				endiandata[19] = work->nonces[1];
+				blake2b_hash(vhash, endiandata);
+
+				char* data_hex = bin2hex((uchar*)endiandata, 80);
+				applog(LOG_DEBUG, "sman pdata2: %s", data_hex);
+
+				if (vhash[7] <= Htarg && fulltest(vhash, ptarget)) {
+					if (bn_hash_target_ratio(vhash, ptarget) > work->shareratio[0]) {
+						work->sharediff[1] = work->sharediff[0];
+						work->shareratio[1] = work->shareratio[0];
+						xchg(work->nonces[1], work->nonces[0]);
+						work_set_target_ratio(work, vhash);
+					}
+					else {
+						bn_set_target_ratio(work, vhash, 1);
+					}
+					work->valid_nonces++;
+					pdata[19] = max(work->nonces[0], work->nonces[1]) + 1; // next scan start
+				}
+				else {
+					gpu_increment_reject(thr_id);
+				}
+			}
+
+			if (work->valid_nonces) {
+				work->nonces[0] = cuda_swab32(work->nonces[0]);
+				work->nonces[1] = cuda_swab32(work->nonces[1]);
+				return work->valid_nonces;
+			}
+		}
+
+		if ((uint64_t)throughput + pdata[19] >= max_nonce) {
+			pdata[19] = max_nonce;
+			break;
+		}
+
+		pdata[19] += throughput;
+
+	} while (!work_restart[thr_id].restart);
+
+	*hashes_done = pdata[19] - first_nonce;
+
+	return 0;
 }
