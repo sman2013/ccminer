@@ -713,11 +713,10 @@ static void calc_network_diff(struct work *work)
 }
 
 // todo
-uint8_t extra_data[44] = { 172, 'y', 'e', 'e', '-', 's', 'w', 'i', 't', 'c', 'h', 
+uint8_t extra_data[40] = { 172, 'y', 'e', 'e', '-', 's', 'w', 'i', 't', 'c', 'h', 
 						   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 						   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ,
-						   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ,
-						   '0', '1', '2'};
+						   '0', '1', '2', '3', '4', '5', '6', '7', '8'};
 
 static void bytes2hex(const char *src, char *dst, int len)
 {
@@ -1078,12 +1077,13 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			for (int i = 0; i < adata_sz; i++)
 				le32enc(work->data + i, work->data[i]);
 		}
+		// work->data[8] = work->nonces[0];
 		str = bin2hex((uchar*)work->data, data_size);
 		if (unlikely(!str)) {
 			applog(LOG_ERR, "submit_upstream_work OOM");
 			return false;
 		}
-
+		applog(LOG_DEBUG, "submit work, data: %s", str);
 		/* build JSON-RPC request */
 		sprintf(s,
 			"{\"jsonrpc\": \"2.0\", \"method\": \"submit_work\", \"params\": [\"%s\"], \"id\":10}\r\n",
