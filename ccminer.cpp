@@ -980,6 +980,9 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			be32enc(&ntime, work->data[10]);
 			be32enc(&nonce, work->data[8]);
 			break;
+		case ALGO_YEE:
+			be32enc(&ntime, work->data[10]);
+			be32enc(&nonce, work->data[8]);
 		case ALGO_ZR5:
 			check_dups = true;
 			be32enc(&ntime, work->data[17]);
@@ -1895,7 +1898,7 @@ static void *miner_thread(void *userdata)
 		int wcmplen =  76;
 		int wcmpoft = 0;
 
-		if (opt_algo == ALGO_SIA) {
+		if (opt_algo == ALGO_SIA || opt_algo == ALGO_YEE) {
 			wcmpoft = (32+16)/4;
 			wcmplen = 32;
 		}
@@ -1922,7 +1925,7 @@ static void *miner_thread(void *userdata)
 			extrajob |= work_done;
 
 			regen = (nonceptr[0] >= end_nonce);
-			if (opt_algo == ALGO_SIA) {
+			if (opt_algo == ALGO_SIA || opt_algo == ALGO_YEE) {
 				regen = ((nonceptr[1] & 0xFF00) >= 0xF000);
 			}
 			regen = regen || extrajob;

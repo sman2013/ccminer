@@ -340,7 +340,7 @@ extern "C" int scanhash_yee(int thr_id, struct work *work, uint32_t max_nonce, u
 
 	memcpy(inputdata, pdata, 80);
 	char* origin_str = bin2hex((uchar*)inputdata, 80);
-	applog(LOG_INFO, "test origin inputdata: %s", origin_str);
+	// applog(LOG_INFO, "test origin inputdata: %s", origin_str);
 	const uint2 target = make_uint2(ptarget[6], ptarget[7]);
 
 	sia_blake2b_setBlock(inputdata);
