@@ -713,7 +713,7 @@ static void calc_network_diff(struct work *work)
 }
 
 // todo
-uint8_t extra_data[40] = { 172, 'y', 'e', 'e', '-', 's', 'w', 'i', 't', 'c', 'h', 
+uint8_t extra_data[40] = { 156, 'y', 'e', 'e', '-', 's', 'w', 'i', 't', 'c', 'h', 
 						   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 						   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ,
 						   '0', '1', '2', '3', '4', '5', '6', '7', '8'};
@@ -742,7 +742,7 @@ static bool work_decode(const json_t *val, struct work *work)
 {
 	int target_size = sizeof(work->target);
 	int atarget_sz = ARRAY_SIZE(work->target);
-	int data_size = 128;
+	int data_size = 80;
 	int adata_sz = data_size / 4;
 	int i;
 
@@ -791,24 +791,24 @@ static bool work_decode(const json_t *val, struct work *work)
 
 	char* m_r = bin2hex((uchar*)work->merkle_root, 32);
 	applog(LOG_INFO, "getwork merkle_root: %s", m_r);
-	char * e_d = bin2hex((uchar*)extra_data, 44);
+	char * e_d = bin2hex((uchar*)extra_data, 40);
 	applog(LOG_INFO, "getwork extradata: %s", e_d);
 
 	memcpy((uint8_t*)work->data, work->merkle_root, 32);
 	for (i = 0; i < 8; i++)
 		work->data[i] = le32dec(work->data + i);
 
-	memcpy((uint8_t*)work->data + 32 + 4, extra_data, 44);
-	for (i = 9; i < 20; i++)
+	memcpy((uint8_t*)work->data + 32, extra_data, 40);
+	for (i = 8; i < 20; i++)
 		work->data[i] = le32dec(work->data + i);
-
-	char* o_d = bin2hex((uchar*)work->data, 80);
-	applog(LOG_INFO, "getwork origin-data: %s", o_d);
 
 	work->targetdiff = target_to_diff(work->target);
 
 	// print_hex("790 sman get-work target", work->target, 8);
 	cbin2hex(work->job_id, (const char*)&work->merkle_root, sizeof(work->merkle_root));
+
+	char* o_d = bin2hex((uchar*)work->data, 80);
+	applog(LOG_INFO, "getwork origin-data: %s", o_d);
 	return true;
 }
 
@@ -1080,8 +1080,8 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			for (int i = 0; i < adata_sz; i++)
 				le32enc(work->data + i, work->data[i]);
 		}
-		// work->data[8] = work->nonces[0];
-		str = bin2hex((uchar*)work->data, data_size);
+		work->data[19] = 0;
+		str = bin2hex((uchar*)work->data, 80);
 		if (unlikely(!str)) {
 			applog(LOG_ERR, "submit_upstream_work OOM");
 			return false;
@@ -1094,7 +1094,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 
 		/* issue JSON-RPC request */
 		val = json_rpc_call_pool(curl, pool, s, false, false, NULL);
-		if (unlikely(!val)) {
+		/*if (unlikely(!val)) {
 			applog(LOG_ERR, "submit_upstream_work json_rpc_call failed");
 			return false;
 		}
@@ -1106,7 +1106,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		{
 			if (check_dups)
 				hashlog_purge_job(work->job_id);
-		}
+		}*/
 
 		json_decref(val);
 
@@ -1282,7 +1282,6 @@ static bool get_upstream_work(CURL *curl, struct work *work)
 		return false;
 
 	rc = work_decode(json_object_get(val, "result"), work);
-	applog(LOG_INFO, "1303 sman get new work");
 	if (opt_protocol && rc) {
 		timeval_subtract(&diff, &tv_end, &tv_start);
 		/* show time because curl can be slower against versions/config */
@@ -1659,7 +1658,10 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		memcpy(&work->data[12], sctx->job.coinbase, 32); // merkle_root
 		work->data[20] = 0x80000000;
 		if (opt_debug) applog_hex(work->data, 80);
-	} else {
+	} else if (opt_algo ==ALGO_YEE){
+		// todo
+	}
+	else {
 		for (i = 0; i < 8; i++)
 			work->data[9 + i] = be32dec((uint32_t *)merkle_root + i);
 		work->data[17] = le32dec(sctx->job.ntime);
@@ -1895,10 +1897,10 @@ static void *miner_thread(void *userdata)
 		bool regen = false;
 
 		// &work.data[19]
-		int wcmplen =  76;
+		int wcmplen =  72;
 		int wcmpoft = 0;
 
-		if (opt_algo == ALGO_SIA || opt_algo == ALGO_YEE) {
+		if (opt_algo == ALGO_SIA) {
 			wcmpoft = (32+16)/4;
 			wcmplen = 32;
 		}
