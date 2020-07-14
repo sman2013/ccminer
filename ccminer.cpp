@@ -713,10 +713,10 @@ static void calc_network_diff(struct work *work)
 }
 
 // todo
-uint8_t extra_data[40] = { 156, 'y', 'e', 'e', '-', 's', 'w', 'i', 't', 'c', 'h', 
-						   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-						   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ,
-						   '0', '1', '2', '3', '4', '5', '6', '7', '8'};
+uint8_t extra_data[40] = { 'y', 'e', 'e', '-', 's', 'w', 'i', 't', 'c', 'h', 
+						   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+						   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+						   0, 0, 0, 0, 0, 0, 196, 89, 135, 21};
 
 static void bytes2hex(const char *src, char *dst, int len)
 {
@@ -798,7 +798,7 @@ static bool work_decode(const json_t *val, struct work *work)
 	for (i = 0; i < 8; i++)
 		work->data[i] = le32dec(work->data + i);
 
-	memcpy((uint8_t*)work->data + 32, extra_data, 40);
+	memcpy((uint8_t*)work->data + 32 + 8, extra_data, 40);
 	for (i = 8; i < 20; i++)
 		work->data[i] = le32dec(work->data + i);
 
@@ -983,6 +983,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		case ALGO_YEE:
 			be32enc(&ntime, work->data[10]);
 			be32enc(&nonce, work->data[8]);
+			break;
 		case ALGO_ZR5:
 			check_dups = true;
 			be32enc(&ntime, work->data[17]);
@@ -1080,7 +1081,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			for (int i = 0; i < adata_sz; i++)
 				le32enc(work->data + i, work->data[i]);
 		}
-		work->data[19] = 0;
+		// work->data[19] = 0;
 		str = bin2hex((uchar*)work->data, 80);
 		if (unlikely(!str)) {
 			applog(LOG_ERR, "submit_upstream_work OOM");
@@ -1904,6 +1905,9 @@ static void *miner_thread(void *userdata)
 			wcmpoft = (32+16)/4;
 			wcmplen = 32;
 		}
+		if (opt_algo == ALGO_YEE) {
+			wcmplen = 32;
+		}
 
 		uint32_t *nonceptr = (uint32_t*) (((char*)work.data) + wcmplen);
 
@@ -1948,7 +1952,7 @@ static void *miner_thread(void *userdata)
 				if (opt_debug && g_work_time && !opt_quiet)
 					applog(LOG_DEBUG, "work time %u/%us nonce %x/%x", secs, scan_time, nonceptr[0], end_nonce);
 				/* obtain new work from internal workio thread */
-				applog(LOG_INFO, "1979 sman obtain new work from internal workio thread");
+				applog(LOG_INFO, "obtain new work from internal workio thread");
 				if (unlikely(!get_work(mythr, &g_work))) {
 					pthread_mutex_unlock(&g_work_lock);
 					if (switchn != pool_switch_count) {
@@ -1980,17 +1984,6 @@ static void *miner_thread(void *userdata)
 		}
 		
 		if (memcmp(&work.data[wcmpoft], &g_work.data[wcmpoft], wcmplen)) {
-			#if 0
-			if (opt_debug) {
-				for (int n=0; n <= (wcmplen-8); n+=8) {
-					if (memcmp(work.data + n, g_work.data + n, 8)) {
-						applog(LOG_DEBUG, "job %s work updated at offset %d:", g_work.job_id, n);
-						applog_hash((uchar*) &work.data[n]);
-						applog_compare_hash((uchar*) &g_work.data[n], (uchar*) &work.data[n]);
-					}
-				}
-			}
-			#endif
 			memcpy(&work, &g_work, sizeof(struct work));
 			nonceptr[0] = (UINT32_MAX / opt_n_threads) * thr_id; // 0 if single thr
 		} else
@@ -2019,7 +2012,7 @@ static void *miner_thread(void *userdata)
 		loopcnt++;
 
 		// prevent gpu scans before a job is received
-		if (opt_algo == ALGO_SIA) nodata_check_oft = 7; // no stratum version
+		if (opt_algo == ALGO_SIA || opt_algo == ALGO_YEE) nodata_check_oft = 7; // no stratum version
 		else if (opt_algo == ALGO_DECRED) nodata_check_oft = 4; // testnet ver is 0
 		else nodata_check_oft = 0;
 		if (have_stratum && work.data[nodata_check_oft] == 0 && !opt_benchmark) {

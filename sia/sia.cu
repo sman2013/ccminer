@@ -114,12 +114,12 @@ void sia_blake2b_gpu_hash(const uint32_t threads, const uint32_t startNonce, uin
 	m[1] = d_data[1];
 	m[2] = d_data[2];
 	m[3] = d_data[3];
-	m[4] = d_data[4];
+	m[4] = d_data[4] | nonce;
 	m[5] = d_data[5];
 	m[6] = d_data[6];
 	m[7] = d_data[7];
 	m[8] = d_data[8];
-	m[9] = d_data[9] | nonce;
+	m[9] = d_data[9];
 
 	m[10] = m[11] = 0;
 	m[12] = m[13] = m[14] = m[15] = 0;
@@ -151,12 +151,6 @@ void sia_blake2b_gpu_hash(const uint32_t threads, const uint32_t startNonce, uin
 		s_target = h64;
 	}
 	// if (!nonce) printf("%016lx ", s_target);
-
-	/*uint2 last = vectorize(v[3] ^ v[11] ^ 0xa54ff53a5f1d36f1);
-	if (last.y < target2.y || (last.y == target2.y && last.x <= target2.x)) {
-	resNonce[1] = resNonce[0];
-	resNonce[0] = nonce;
-	}*/
 }
 
 __host__
@@ -326,7 +320,7 @@ int scanhash_yee(int thr_id, struct work *work, uint32_t max_nonce, unsigned lon
 	uint32_t *ptarget = work->target;
 
 	const uint32_t Htarg = ptarget[7];
-	const uint32_t first_nonce = pdata[18];
+	const uint32_t first_nonce = pdata[8];
 
 	int dev_id = device_map[thr_id];
 	int intensity = (device_sm[dev_id] >= 500 && !is_windows()) ? 28 : 25;
@@ -359,14 +353,14 @@ int scanhash_yee(int thr_id, struct work *work, uint32_t max_nonce, unsigned lon
 	sia_blake2b_setBlock(inputdata);
 
 	do {
-		work->nonces[0] = sia_blake2b_hash_cuda(thr_id, throughput, pdata[18], target, work->nonces[1]);
+		work->nonces[0] = sia_blake2b_hash_cuda(thr_id, throughput, pdata[8], target, work->nonces[1]);
 
-		*hashes_done = pdata[18] - first_nonce + throughput;
+		*hashes_done = pdata[8] - first_nonce + throughput;
 
 		if (work->nonces[0] != UINT32_MAX)
 		{
 			work->valid_nonces = 0;
-			inputdata[18] = work->nonces[0];
+			inputdata[8] = work->nonces[0];
 			sia_blake2b_hash(hash, inputdata);
 			if (swab32(hash[0]) <= Htarg) {
 				char* data_hex = bin2hex((uchar*)inputdata, 80);
@@ -376,8 +370,8 @@ int scanhash_yee(int thr_id, struct work *work, uint32_t max_nonce, unsigned lon
 				if (fulltest(vhashcpu, ptarget)) {
 					work_set_target_ratio(work, vhashcpu);
 					work->valid_nonces++;
-					pdata[19] = work->nonces[0] + 1;
-					printf("sman pdata[18] = work->nonces[0] + 1\n");
+					pdata[8] = work->nonces[0] + 1;
+					printf("sman pdata[8] = work->nonces[0] + 1\n");
 				}
 			}
 			else {
@@ -385,9 +379,9 @@ int scanhash_yee(int thr_id, struct work *work, uint32_t max_nonce, unsigned lon
 			}
 
 			if (work->nonces[1] != UINT32_MAX) {
-				inputdata[18] = work->nonces[1];
+				inputdata[8] = work->nonces[1];
 				// char* nonce = bin2hex((uchar*)work->nonces[0], 4);
-				printf("sman inputdata[18] = work->nonces[1]£»  nonece[0]:%08x\n", work->nonces[0]);
+				printf("sman inputdata[8] = work->nonces[1]£»  nonece[0]:%08x\n", work->nonces[0]);
 				sia_blake2b_hash(hash, inputdata);
 				if (swab32(hash[0]) <= Htarg) {
 					swab256(vhashcpu, hash);
@@ -402,7 +396,7 @@ int scanhash_yee(int thr_id, struct work *work, uint32_t max_nonce, unsigned lon
 							bn_set_target_ratio(work, vhashcpu, 1);
 						}
 						work->valid_nonces++;
-						pdata[18] = work->nonces[1] + 1;
+						pdata[8] = work->nonces[1] + 1;
 					}
 				}
 				else {
@@ -414,16 +408,16 @@ int scanhash_yee(int thr_id, struct work *work, uint32_t max_nonce, unsigned lon
 			}
 		}
 
-		if ((uint64_t)throughput + pdata[18] >= max_nonce) {
-			pdata[18] = max_nonce;
+		if ((uint64_t)throughput + pdata[8] >= max_nonce) {
+			pdata[8] = max_nonce;
 			break;
 		}
 
-		pdata[18] += throughput;
+		pdata[8] += throughput;
 
 	} while (!work_restart[thr_id].restart);
 
-	*hashes_done = pdata[18] - first_nonce;
+	*hashes_done = pdata[8] - first_nonce;
 
 	return 0;
 }
